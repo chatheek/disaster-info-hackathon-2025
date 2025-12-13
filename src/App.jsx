@@ -252,9 +252,9 @@ export default function App() {
             <div className="form-group">
                 <label>Disaster Type</label>
                 <select name="disasterType" required>
-                    <option value="flood">Flood</option>
-                    <option value="roadlock">Road Block</option>
-                    <option value="powerlinedown">Power Line Down</option>
+                    <option value="Flood">Flood</option>
+                    <option value="Road Block">Road Block</option>
+                    <option value="Power Line Down">Power Line Down</option>
                     <option value="landslide">Landslide</option>
                 </select>
             </div>
