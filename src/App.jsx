@@ -5,15 +5,16 @@ import { supabase } from './supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import Auth from './Auth';
 import AdminDashboard from './AdminDashboard';
-import ChatBot from './ChatBot'; // 🤖 Import ChatBot
-import { encryptData } from './cryptoUtils'; // 🔒 Import Encryption (Security Feature)
-import './App.css';
+import ChatBot from './ChatBot'; // <--- 1. Import ChatBot
+import './App.css'; 
 
 export default function App() {
   const [session, setSession] = useState(null);
-  const [view, setView] = useState('home'); // 'home' or 'admin'
-  const [showChat, setShowChat] = useState(false); // 💬 ChatBot State
+  const [view, setView] = useState('home'); 
   
+  // --- 2. Add Chat State ---
+  const [showChat, setShowChat] = useState(false);
+
   // App States
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('Idle');
@@ -27,7 +28,7 @@ export default function App() {
   // Helper to check if current user is admin
   const isAdmin = session?.user?.email === 'admin@gmail.com';
 
-  // 1. INITIALIZE APP
+  // 1. INITIALIZE
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -42,7 +43,7 @@ export default function App() {
     updatePendingCount();
     window.addEventListener('online', handleSync);
     
-    // Auto-request Location on load
+    // Auto-location
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setLocationPermission('granted');
@@ -60,7 +61,7 @@ export default function App() {
     };
   }, []);
 
-  // --- ROUTING LOGIC ---
+  // --- ROUTING ---
   const handleSessionRouting = (currentSession) => {
     if (currentSession) {
       fetchReports(currentSession.user.id);
@@ -72,9 +73,8 @@ export default function App() {
     }
   };
 
-  // --- FETCH DATA (Merged Local + Remote) ---
+  // --- FETCH DATA ---
   const fetchReports = async (userId) => {
-    // 1. Get Local (Pending)
     const localData = await db.pendingReports.toArray();
     const formattedLocal = localData.map(item => ({
       ...item,
@@ -83,20 +83,18 @@ export default function App() {
       isLocal: true
     }));
 
-    // 2. Get Remote (Supabase)
     const { data: remoteData } = await supabase
       .from('reports')
       .select('*')
       .eq('user_id', userId)
       .order('timestamp', { ascending: false });
 
-    // 3. Combine
     const combined = [...formattedLocal, ...(remoteData || [])];
     combined.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     setMyReports(combined);
   };
 
-  // --- SYNC ENGINE ---
+  // --- SYNC & UPLOAD ---
   const requestLocation = () => {
     if (!navigator.geolocation) return alert("Browser not supported");
     navigator.geolocation.getCurrentPosition(
@@ -134,11 +132,9 @@ export default function App() {
     if (session) fetchReports(session.user.id);
   };
 
-  // --- UPLOAD LOGIC ---
   const uploadToSupabase = async (data) => {
     let imageUrl = null;
 
-    // 1. Upload Image if exists
     if (data.imageBlob) {
       const fileName = `${uuidv4()}.jpg`;
       const { error: upErr } = await supabase.storage.from('reports').upload(fileName, data.imageBlob);
@@ -147,7 +143,7 @@ export default function App() {
       imageUrl = publicUrl;
     }
 
-    // 2. Insert Data (Note: contact info is passed as is, assumed encrypted in payload)
+    // Include contact_name and phone_number (No Encryption)
     const { error } = await supabase.from('reports').insert({
       user_id: data.userId, 
       disaster_type: data.disasterType,
@@ -164,7 +160,6 @@ export default function App() {
     if (error) throw error;
   };
 
-  // --- FORM SUBMISSION ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!coords) return alert("Please enable location first.");
@@ -173,22 +168,15 @@ export default function App() {
     setStatus('Processing...');
     const formData = new FormData(e.target);
     const imageFile = formData.get('image');
-    
-    // Get raw values
-    const rawName = formData.get('contactName');
-    const rawPhone = formData.get('phoneNumber');
 
-    // 🔒 ENCRYPTION STEP: Encrypt sensitive fields BEFORE saving
+    // Capture new form fields (No Encryption)
     const payload = {
       userId: session.user.id, 
       disasterType: formData.get('disasterType'),
       comments: formData.get('comments'),
       severity: formData.get('severity'),
-      
-      // Encrypt here
-      contactName: rawName ? encryptData(rawName) : null,
-      phoneNumber: rawPhone ? encryptData(rawPhone) : null,
-
+      contactName: formData.get('contactName'),
+      phoneNumber: formData.get('phoneNumber'),
       latitude: coords.latitude,
       longitude: coords.longitude,
       timestamp: new Date().toISOString(),
@@ -219,17 +207,13 @@ export default function App() {
     setView('home');
   };
 
-  // --- VIEW RENDERING ---
-  
-  // 1. Auth Check
+  // --- RENDER ---
   if (!session) return <Auth />;
 
-  // 2. Admin View
   if (view === 'admin' && isAdmin) {
     return <AdminDashboard session={session} onBack={() => setView('home')} />;
   }
 
-  // 3. User View (Main App)
   return (
     <div className="app-container">
       
@@ -290,7 +274,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* New Optional Fields */}
           <div className="form-row">
             <div className="form-group">
                 <label>Contact Name (Optional)</label>
@@ -372,7 +355,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- CHATBOT FLOATING BUTTON --- */}
+      {/* --- 3. CHATBOT UI ELEMENTS --- */}
       <button 
         className="chatbot-fab" 
         onClick={() => setShowChat(!showChat)}
@@ -381,7 +364,6 @@ export default function App() {
         💬
       </button>
 
-      {/* --- CHAT WINDOW (CONDITIONAL RENDER) --- */}
       {showChat && <ChatBot onClose={() => setShowChat(false)} />}
 
     </div>

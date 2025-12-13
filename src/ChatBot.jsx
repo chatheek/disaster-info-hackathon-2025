@@ -1,6 +1,6 @@
 // src/ChatBot.jsx
 import { useState, useEffect, useRef } from 'react';
-import './ChatBot.css';
+import './ChatBot.css'; // We will add styles for this later
 
 const KNOWLEDGE_BASE = {
   default: "I can help with emergency contacts. Try asking for 'Police', 'Ambulance', 'Flood', 'Fire', or 'Hospital'.",
@@ -36,7 +36,7 @@ export default function ChatBot({ onClose }) {
     const userMsg = { id: Date.now(), text: input, sender: 'user' };
     setMessages(prev => [...prev, userMsg]);
     
-    // Process Response (Simple Keyword Matching)
+    // Offline Logic: Simple Keyword Matching
     const lowerInput = input.toLowerCase();
     let botResponse = KNOWLEDGE_BASE.default;
 
@@ -46,7 +46,6 @@ export default function ChatBot({ onClose }) {
     else if (lowerInput.includes('flood') || lowerInput.includes('rain') || lowerInput.includes('disaster')) botResponse = KNOWLEDGE_BASE.flood;
     else if (lowerInput.includes('power') || lowerInput.includes('light') || lowerInput.includes('electricity')) botResponse = KNOWLEDGE_BASE.electricity;
     else if (lowerInput.includes('hospital') || lowerInput.includes('doctor')) botResponse = KNOWLEDGE_BASE.hospital;
-    else if (lowerInput.includes('bomb')) botResponse = KNOWLEDGE_BASE.bomb;
 
     setTimeout(() => {
       setMessages(prev => [...prev, { id: Date.now() + 1, text: botResponse, sender: 'bot' }]);
