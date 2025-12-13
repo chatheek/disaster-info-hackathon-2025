@@ -131,14 +131,13 @@
 }
 
 /* --- Mobile Responsiveness --- */
-@media (max-width: 480px) {
-  .auth-card {
-    padding: 1.5rem;
-    box-shadow: none; /* Flatter look on mobile */
-    border: 1px solid var(--border-color);
-  }
-  
-  .auth-title {
-    font-size: 1.5rem;
-  }
-}
+/* @media screen and (max-width: 720px) {
+    .auth-container{
+        display: flex;
+    }
+    .auth-card{
+        margin-left: auto;
+        margin-right: auto;
+    }
+} */
+

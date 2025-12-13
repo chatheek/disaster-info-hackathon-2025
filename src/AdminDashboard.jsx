@@ -3,6 +3,19 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import './AdminDashboard.css';
 
+// --- NEW IMPORTS FOR MAP ---
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// --- FIX LEAFLET DEFAULT ICON ISSUE ---
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
 export default function AdminDashboard({ session, onBack }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +97,15 @@ export default function AdminDashboard({ session, onBack }) {
 
   const displayedReports = getFilteredReports();
 
+  // --- MAP REPORTS LOGIC ---
+  // Only show markers for active submissions (Not Ignored, Not Action Taken)
+  // Note: 'Ignored' is already filtered out by the initial fetch.
+  // We just need to filter out 'Action Taken' for the map.
+  const mapReports = reports.filter(r => r.status === 'Submitted');
+
+  // Default center (Sri Lanka approximate center, or 0,0)
+  const defaultCenter = [7.8731, 80.7718]; 
+
   return (
     <div className="dashboard-container">
       
@@ -94,6 +116,38 @@ export default function AdminDashboard({ session, onBack }) {
           Sign Out
         </button>
       </div>
+
+      {/* --- NEW MAP SECTION --- */}
+      {!loading && (
+        <div className="map-preview-section">
+          <h3>📍 Live Incident Map (Pending Actions)</h3>
+          <div className="map-container-wrapper">
+             <MapContainer 
+               center={mapReports.length > 0 ? [mapReports[0].latitude, mapReports[0].longitude] : defaultCenter} 
+               zoom={mapReports.length > 0 ? 10 : 7} 
+               scrollWheelZoom={false}
+               style={{ height: "350px", width: "100%", borderRadius: "12px" }}
+             >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {mapReports.map((report) => (
+                <Marker 
+                  key={report.id} 
+                  position={[report.latitude, report.longitude]}
+                >
+                  <Popup>
+                    <strong>{report.disaster_type}</strong> <br />
+                    Severity: {report.severity} <br />
+                    {new Date(report.timestamp).toLocaleDateString()}
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+          </div>
+        </div>
+      )}
 
       {/* Toolbar */}
       {!loading && (
