@@ -5,14 +5,14 @@ import { supabase } from './supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import Auth from './Auth';
 import AdminDashboard from './AdminDashboard';
-import ChatBot from './ChatBot'; // 🤖 Import Chatbot
-
-import './App.css'; 
+import ChatBot from './ChatBot'; // 🤖 Import ChatBot
+import { encryptData } from './cryptoUtils'; // 🔒 Import Encryption (Security Feature)
+import './App.css';
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [view, setView] = useState('home'); // 'home' or 'admin'
-  const [showChat, setShowChat] = useState(false); // 💬 Chatbot State
+  const [showChat, setShowChat] = useState(false); // 💬 ChatBot State
   
   // App States
   const [loading, setLoading] = useState(false);
@@ -147,7 +147,7 @@ export default function App() {
       imageUrl = publicUrl;
     }
 
-    // 2. Insert Data (Note: contact info is ALREADY encrypted in 'data' object)
+    // 2. Insert Data (Note: contact info is passed as is, assumed encrypted in payload)
     const { error } = await supabase.from('reports').insert({
       user_id: data.userId, 
       disaster_type: data.disasterType,
@@ -174,16 +174,18 @@ export default function App() {
     const formData = new FormData(e.target);
     const imageFile = formData.get('image');
     
+    // Get raw values
     const rawName = formData.get('contactName');
     const rawPhone = formData.get('phoneNumber');
 
-    // 🔒 Encrypt sensitive fields BEFORE saving anywhere
+    // 🔒 ENCRYPTION STEP: Encrypt sensitive fields BEFORE saving
     const payload = {
       userId: session.user.id, 
       disasterType: formData.get('disasterType'),
       comments: formData.get('comments'),
       severity: formData.get('severity'),
       
+      // Encrypt here
       contactName: rawName ? encryptData(rawName) : null,
       phoneNumber: rawPhone ? encryptData(rawPhone) : null,
 
@@ -379,7 +381,7 @@ export default function App() {
         💬
       </button>
 
-      {/* --- CHAT WINDOW --- */}
+      {/* --- CHAT WINDOW (CONDITIONAL RENDER) --- */}
       {showChat && <ChatBot onClose={() => setShowChat(false)} />}
 
     </div>
