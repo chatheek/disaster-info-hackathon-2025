@@ -253,8 +253,8 @@ export default function App() {
                 <label>Disaster Type</label>
                 <select name="disasterType" required>
                     <option value="flood">Flood</option>
-                    <option value="fire">Fire</option>
-                    <option value="earthquake">Earthquake</option>
+                    <option value="roadlock">Road Block</option>
+                    <option value="powerlinedown">Power Line Down</option>
                     <option value="landslide">Landslide</option>
                 </select>
             </div>
