@@ -139,6 +139,7 @@ export default function App() {
       imageUrl = publicUrl;
     }
 
+    // UPDATED: Include contact_name and phone_number
     const { error } = await supabase.from('reports').insert({
       user_id: data.userId, 
       disaster_type: data.disasterType,
@@ -148,6 +149,8 @@ export default function App() {
       severity: data.severity,
       timestamp: data.timestamp,
       image_url: imageUrl,
+      contact_name: data.contactName || null,
+      phone_number: data.phoneNumber || null,
       status: 'Submitted'
     });
     if (error) throw error;
@@ -162,11 +165,14 @@ export default function App() {
     const formData = new FormData(e.target);
     const imageFile = formData.get('image');
 
+    // UPDATED: Capture new form fields
     const payload = {
       userId: session.user.id, 
       disasterType: formData.get('disasterType'),
       comments: formData.get('comments'),
       severity: formData.get('severity'),
+      contactName: formData.get('contactName'),
+      phoneNumber: formData.get('phoneNumber'),
       latitude: coords.latitude,
       longitude: coords.longitude,
       timestamp: new Date().toISOString(),
@@ -264,7 +270,22 @@ export default function App() {
             </div>
           </div>
 
-          <div className="form-group">
+          {/* --- NEW OPTIONAL FIELDS --- */}
+          <div className="form-row">
+            <div className="form-group">
+                <label>Contact Name (Optional)</label>
+                <input type="text" name="contactName" placeholder="Your Name" />
+            </div>
+            <div className="form-group">
+                <label>Phone Number (Optional)</label>
+                <div className="phone-input-group">
+                  <span className="prefix">+94</span>
+                  <input type="tel" name="phoneNumber" placeholder="7XXXXXXXX" pattern="[0-9]{9}" />
+                </div>
+            </div>
+          </div>
+
+          <div className="form-group" id='form-id'>
             <label>Comments</label>
             <textarea name="comments" rows="3" required placeholder="Describe the situation..."></textarea>
           </div>

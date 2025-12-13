@@ -204,7 +204,6 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
-
 .file-input-wrapper {
   margin-top: 5px;
 }
@@ -294,7 +293,12 @@ input:focus, select:focus, textarea:focus {
 
 /* --- Mobile Tweaks --- */
 @media (max-width: 600px) {
+  #root{
+    max-width: -webkit-fill-available;
+  }
+
   .app-container {
+    width: -webkit-fill-available;
     padding: 10px;
   }
   
@@ -311,5 +315,54 @@ input:focus, select:focus, textarea:focus {
   .status-bar {
     flex-direction: column;
     text-align: center;
+  }
+}
+
+
+/*--------------------*/
+
+/* Add to src/App.css */
+.phone-input-group {
+  display: flex;
+  align-items: center;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+  background: white;
+}
+
+.phone-input-group .prefix {
+  background-color: #eee;
+  padding: 10px 12px;
+  font-weight: bold;
+  color: #555;
+  border-right: 1px solid #ccc;
+  font-size: 0.95rem;
+}
+
+.phone-input-group input {
+  border: none !important;
+  margin: 0;
+  padding: 10px;
+  width: 100%;
+  outline: none;
+  font-size: 1rem;
+}
+
+/* Ensure flex containers work for the new row */
+.form-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.form-group {
+  flex: 1;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    flex-direction: column;
+    gap: 10px;
   }
 }

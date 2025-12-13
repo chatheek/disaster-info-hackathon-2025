@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import './AdminDashboard.css';
 
-// --- NEW IMPORTS FOR MAP ---
+// --- IMPORTS FOR MAP ---
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -29,6 +29,7 @@ export default function AdminDashboard({ session, onBack }) {
 
   const fetchAllReports = async () => {
     setLoading(true);
+    // Select * will automatically include contact_name and phone_number if they exist in DB
     const { data, error } = await supabase
       .from('reports')
       .select('*')
@@ -61,16 +62,20 @@ export default function AdminDashboard({ session, onBack }) {
     onBack();
   };
 
-  // --- EXPORT LOGIC ---
+  // --- EXPORT LOGIC (UPDATED) ---
   const handleExportCSV = () => {
     if (reports.length === 0) return alert("No data to export.");
 
-    const headers = ["ID", "Status", "Type", "Severity", "Comments", "Latitude", "Longitude", "Date", "Image URL"];
+    // Added Contact Name and Phone Number to headers
+    const headers = ["ID", "Status", "Type", "Severity", "Contact Name", "Phone Number", "Comments", "Latitude", "Longitude", "Date", "Image URL"];
+    
     const rows = reports.map(r => [
       r.id,
       r.status,
       r.disaster_type,
       r.severity,
+      `"${(r.contact_name || 'N/A').replace(/"/g, '""')}"`, // Escape quotes
+      `"${(r.phone_number || 'N/A').replace(/"/g, '""')}"`,
       `"${(r.comments || '').replace(/"/g, '""')}"`,
       r.latitude,
       r.longitude,
@@ -98,13 +103,9 @@ export default function AdminDashboard({ session, onBack }) {
   const displayedReports = getFilteredReports();
 
   // --- MAP REPORTS LOGIC ---
-  // Only show markers for active submissions (Not Ignored, Not Action Taken)
-  // Note: 'Ignored' is already filtered out by the initial fetch.
-  // We just need to filter out 'Action Taken' for the map.
   const mapReports = reports.filter(r => r.status === 'Submitted');
-
-  // Default center (Sri Lanka approximate center, or 0,0)
-  const defaultCenter = [7.8731, 80.7718]; 
+  const sriLankaCenter = [7.8731, 80.7718]; 
+  const sriLankaBounds = [[5.8, 79.5], [10.0, 82.0]];
 
   return (
     <div className="dashboard-container">
@@ -117,19 +118,22 @@ export default function AdminDashboard({ session, onBack }) {
         </button>
       </div>
 
-      {/* --- NEW MAP SECTION --- */}
+      {/* --- MAP SECTION --- */}
       {!loading && (
         <div className="map-preview-section">
-          <h3>📍 Live Incident Map (Pending Actions)</h3>
+          <h3>📍 Live Incident Map (Sri Lanka Only)</h3>
           <div className="map-container-wrapper">
              <MapContainer 
-               center={mapReports.length > 0 ? [mapReports[0].latitude, mapReports[0].longitude] : defaultCenter} 
-               zoom={mapReports.length > 0 ? 10 : 7} 
-               scrollWheelZoom={false}
+               center={sriLankaCenter} 
+               zoom={8} 
+               minZoom={7}
+               maxBounds={sriLankaBounds}
+               maxBoundsViscosity={1.0}
+               scrollWheelZoom={true}
                style={{ height: "350px", width: "100%", borderRadius: "12px" }}
              >
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
               {mapReports.map((report) => (
@@ -188,6 +192,8 @@ export default function AdminDashboard({ session, onBack }) {
                   <th>Status</th>
                   <th>Actions</th>
                   <th>Type / Severity</th>
+                  <th>Contact Name</th> {/* NEW HEADER */}
+                  <th>Phone</th>        {/* NEW HEADER */}
                   <th>Location</th>
                   <th>Evidence</th>
                   <th>Comments</th>
@@ -197,7 +203,7 @@ export default function AdminDashboard({ session, onBack }) {
               <tbody>
                 {displayedReports.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="empty-state">
+                    <td colSpan="9" className="empty-state">
                       {reports.length === 0 ? "No active reports found." : "No reports match this severity filter."}
                     </td>
                   </tr>
@@ -230,6 +236,22 @@ export default function AdminDashboard({ session, onBack }) {
                       <td className="type-cell">
                         <strong>{report.disaster_type}</strong>
                         <span className="severity-meter">Severity: {report.severity}/5</span>
+                      </td>
+
+                      {/* --- NEW COLUMNS --- */}
+                      
+                      {/* Contact Name */}
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                         {report.contact_name || <span className="text-muted">-</span>}
+                      </td>
+
+                      {/* Phone Number */}
+                      <td style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                         {report.phone_number ? (
+                            <a href={`tel:${report.phone_number}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                               {report.phone_number}
+                            </a>
+                         ) : <span className="text-muted">-</span>}
                       </td>
 
                       {/* Location */}
