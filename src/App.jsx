@@ -5,11 +5,14 @@ import { supabase } from './supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import Auth from './Auth';
 import AdminDashboard from './AdminDashboard';
-import './App.css'; // <--- Import the new stylesheet
+import ChatBot from './ChatBot'; // 🤖 Import Chatbot
+
+import './App.css'; 
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [view, setView] = useState('home'); // 'home' or 'admin'
+  const [showChat, setShowChat] = useState(false); // 💬 Chatbot State
   
   // App States
   const [loading, setLoading] = useState(false);
@@ -24,7 +27,7 @@ export default function App() {
   // Helper to check if current user is admin
   const isAdmin = session?.user?.email === 'admin@gmail.com';
 
-  // 1. INITIALIZE
+  // 1. INITIALIZE APP
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -39,7 +42,7 @@ export default function App() {
     updatePendingCount();
     window.addEventListener('online', handleSync);
     
-    // Auto-location
+    // Auto-request Location on load
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setLocationPermission('granted');
@@ -57,7 +60,7 @@ export default function App() {
     };
   }, []);
 
-  // --- ROUTING ---
+  // --- ROUTING LOGIC ---
   const handleSessionRouting = (currentSession) => {
     if (currentSession) {
       fetchReports(currentSession.user.id);
@@ -69,8 +72,9 @@ export default function App() {
     }
   };
 
-  // --- FETCH DATA ---
+  // --- FETCH DATA (Merged Local + Remote) ---
   const fetchReports = async (userId) => {
+    // 1. Get Local (Pending)
     const localData = await db.pendingReports.toArray();
     const formattedLocal = localData.map(item => ({
       ...item,
@@ -79,18 +83,20 @@ export default function App() {
       isLocal: true
     }));
 
+    // 2. Get Remote (Supabase)
     const { data: remoteData } = await supabase
       .from('reports')
       .select('*')
       .eq('user_id', userId)
       .order('timestamp', { ascending: false });
 
+    // 3. Combine
     const combined = [...formattedLocal, ...(remoteData || [])];
     combined.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     setMyReports(combined);
   };
 
-  // --- SYNC & UPLOAD ---
+  // --- SYNC ENGINE ---
   const requestLocation = () => {
     if (!navigator.geolocation) return alert("Browser not supported");
     navigator.geolocation.getCurrentPosition(
@@ -128,9 +134,11 @@ export default function App() {
     if (session) fetchReports(session.user.id);
   };
 
+  // --- UPLOAD LOGIC ---
   const uploadToSupabase = async (data) => {
     let imageUrl = null;
 
+    // 1. Upload Image if exists
     if (data.imageBlob) {
       const fileName = `${uuidv4()}.jpg`;
       const { error: upErr } = await supabase.storage.from('reports').upload(fileName, data.imageBlob);
@@ -139,7 +147,7 @@ export default function App() {
       imageUrl = publicUrl;
     }
 
-    // UPDATED: Include contact_name and phone_number
+    // 2. Insert Data (Note: contact info is ALREADY encrypted in 'data' object)
     const { error } = await supabase.from('reports').insert({
       user_id: data.userId, 
       disaster_type: data.disasterType,
@@ -156,6 +164,7 @@ export default function App() {
     if (error) throw error;
   };
 
+  // --- FORM SUBMISSION ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!coords) return alert("Please enable location first.");
@@ -164,15 +173,20 @@ export default function App() {
     setStatus('Processing...');
     const formData = new FormData(e.target);
     const imageFile = formData.get('image');
+    
+    const rawName = formData.get('contactName');
+    const rawPhone = formData.get('phoneNumber');
 
-    // UPDATED: Capture new form fields
+    // 🔒 Encrypt sensitive fields BEFORE saving anywhere
     const payload = {
       userId: session.user.id, 
       disasterType: formData.get('disasterType'),
       comments: formData.get('comments'),
       severity: formData.get('severity'),
-      contactName: formData.get('contactName'),
-      phoneNumber: formData.get('phoneNumber'),
+      
+      contactName: rawName ? encryptData(rawName) : null,
+      phoneNumber: rawPhone ? encryptData(rawPhone) : null,
+
       latitude: coords.latitude,
       longitude: coords.longitude,
       timestamp: new Date().toISOString(),
@@ -203,13 +217,17 @@ export default function App() {
     setView('home');
   };
 
-  // --- RENDER ---
+  // --- VIEW RENDERING ---
+  
+  // 1. Auth Check
   if (!session) return <Auth />;
 
+  // 2. Admin View
   if (view === 'admin' && isAdmin) {
     return <AdminDashboard session={session} onBack={() => setView('home')} />;
   }
 
+  // 3. User View (Main App)
   return (
     <div className="app-container">
       
@@ -270,7 +288,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* --- NEW OPTIONAL FIELDS --- */}
+          {/* New Optional Fields */}
           <div className="form-row">
             <div className="form-group">
                 <label>Contact Name (Optional)</label>
@@ -322,8 +340,6 @@ export default function App() {
               ) : (
                 myReports.map((item, idx) => (
                   <tr key={idx} className={item.isLocal ? 'row-local' : 'row-remote'}>
-                    
-                    {/* Status */}
                     <td>
                       {item.isLocal ? (
                           <span className="status-pending">⚠️ {item.status}</span>
@@ -333,26 +349,19 @@ export default function App() {
                           </span>
                       )}
                     </td>
-
-                    {/* Type */}
                     <td>
                       <strong style={{textTransform:'capitalize'}}>{item.disaster_type}</strong>
                       <span className="meta-info">Sev: {item.severity}</span>
                     </td>
-
-                    {/* Comment */}
                     <td style={{maxWidth:'200px'}}>
                       {item.comments}
                     </td>
-
-                    {/* Date */}
                     <td>
                       {new Date(item.timestamp).toLocaleDateString()}
                       <span className="meta-info">
                         {new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </span>
                     </td>
-
                   </tr>
                 ))
               )}
@@ -360,6 +369,18 @@ export default function App() {
           </table>
         </div>
       </div>
+
+      {/* --- CHATBOT FLOATING BUTTON --- */}
+      <button 
+        className="chatbot-fab" 
+        onClick={() => setShowChat(!showChat)}
+        aria-label="Open Chat"
+      >
+        💬
+      </button>
+
+      {/* --- CHAT WINDOW --- */}
+      {showChat && <ChatBot onClose={() => setShowChat(false)} />}
 
     </div>
   );
