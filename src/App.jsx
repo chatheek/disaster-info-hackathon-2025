@@ -5,14 +5,12 @@ import { supabase } from './supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import Auth from './Auth';
 import AdminDashboard from './AdminDashboard';
-import ChatBot from './ChatBot'; // <--- 1. Import ChatBot
+import ChatBot from './ChatBot'; 
 import './App.css'; 
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [view, setView] = useState('home'); 
-  
-  // --- 2. Add Chat State ---
   const [showChat, setShowChat] = useState(false);
 
   // App States
@@ -28,7 +26,7 @@ export default function App() {
   // Helper to check if current user is admin
   const isAdmin = session?.user?.email === 'admin@gmail.com';
 
-  // 1. INITIALIZE
+  // 1. INITIALIZE & REALTIME SETUP
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -55,11 +53,48 @@ export default function App() {
       (error) => { if (error.code === 1) setLocationPermission('denied'); }
     );
 
+    // ⚡ REALTIME LISTENER FOR USER REPORTS
+    const channel = supabase
+      .channel('realtime:user_reports')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, (payload) => {
+        handleRealtimeEvent(payload);
+      })
+      .subscribe();
+
     return () => {
       window.removeEventListener('online', handleSync);
       subscription.unsubscribe();
+      supabase.removeChannel(channel); // Clean up
     };
-  }, []);
+  }, [session]); // Add session as dependency to re-check user ID filtering
+
+  // --- REALTIME HANDLER ---
+  const handleRealtimeEvent = (payload) => {
+    if (!session) return; // Only process if logged in
+    const userId = session.user.id;
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+
+    setMyReports((prevReports) => {
+      // Filter out only relevant records for THIS user
+      // Note: RLS on backend is best, but frontend filtering is good for UX here
+
+      // 1. UPDATE: If status changes (e.g. Admin marks 'Action Taken')
+      if (eventType === 'UPDATE') {
+        if (newRecord.user_id !== userId) return prevReports; // Not my report
+        return prevReports.map(r => r.id === newRecord.id ? { ...r, ...newRecord, isLocal: false } : r);
+      }
+
+      // 2. INSERT: If user adds report from another device
+      if (eventType === 'INSERT') {
+        if (newRecord.user_id !== userId) return prevReports;
+        // Check if it's already in the list (local optimistic update might have added it)
+        if (prevReports.find(r => r.id === newRecord.id)) return prevReports;
+        return [ { ...newRecord, isLocal: false }, ...prevReports ];
+      }
+
+      return prevReports;
+    });
+  };
 
   // --- ROUTING ---
   const handleSessionRouting = (currentSession) => {
@@ -143,7 +178,6 @@ export default function App() {
       imageUrl = publicUrl;
     }
 
-    // Include contact_name and phone_number (No Encryption)
     const { error } = await supabase.from('reports').insert({
       user_id: data.userId, 
       disaster_type: data.disasterType,
@@ -169,7 +203,6 @@ export default function App() {
     const formData = new FormData(e.target);
     const imageFile = formData.get('image');
 
-    // Capture new form fields (No Encryption)
     const payload = {
       userId: session.user.id, 
       disasterType: formData.get('disasterType'),
@@ -198,6 +231,7 @@ export default function App() {
     }
     e.target.reset();
     updatePendingCount();
+    // fetchReports is called via Realtime or Sync, but calling it here ensures local view updates immediately
     fetchReports(session.user.id);
     setLoading(false);
   };
@@ -355,7 +389,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- 3. CHATBOT UI ELEMENTS --- */}
       <button 
         className="chatbot-fab" 
         onClick={() => setShowChat(!showChat)}

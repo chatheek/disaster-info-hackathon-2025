@@ -40,9 +40,29 @@ export default function AdminDashboard({ session, onBack }) {
   // Filtering State
   const [severityFilter, setSeverityFilter] = useState('all');
 
+  // 1. INITIAL FETCH & REALTIME SUBSCRIPTION
   useEffect(() => {
     fetchAllReports();
+
+    // ⚡ REALTIME LISTENER
+    const channel = supabase
+      .channel('realtime:reports')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, (payload) => {
+        handleRealtimeEvent(payload);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  // 2. RE-CALCULATE CLUSTERS WHENEVER REPORTS CHANGE
+  useEffect(() => {
+    if (reports.length > 0) {
+      detectHighAlerts(reports);
+    }
+  }, [reports]);
 
   const fetchAllReports = async () => {
     setLoading(true);
@@ -52,13 +72,37 @@ export default function AdminDashboard({ session, onBack }) {
       .neq('status', 'Ignored') 
       .order('timestamp', { ascending: false });
     
-    if (error) {
-      console.error('Error fetching reports:', error);
-    } else {
-      setReports(data);
-      detectHighAlerts(data);
-    }
+    if (error) console.error('Error fetching reports:', error);
+    else setReports(data);
     setLoading(false);
+  };
+
+  // --- REALTIME EVENT HANDLER ---
+  const handleRealtimeEvent = (payload) => {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+
+    setReports((prevReports) => {
+      // 1. INSERT: Add new report to top if not 'Ignored'
+      if (eventType === 'INSERT') {
+        if (newRecord.status === 'Ignored') return prevReports;
+        return [newRecord, ...prevReports];
+      }
+
+      // 2. UPDATE: Update existing report or remove if 'Ignored'
+      if (eventType === 'UPDATE') {
+        if (newRecord.status === 'Ignored') {
+          return prevReports.filter(r => r.id !== newRecord.id);
+        }
+        return prevReports.map(r => r.id === newRecord.id ? newRecord : r);
+      }
+
+      // 3. DELETE: Remove from list
+      if (eventType === 'DELETE') {
+        return prevReports.filter(r => r.id !== oldRecord.id);
+      }
+
+      return prevReports;
+    });
   };
 
   // --- LOGIC: DETECT CLUSTERS (500m Radius) ---
@@ -102,24 +146,16 @@ export default function AdminDashboard({ session, onBack }) {
   // --- ACTIONS ---
   const markActionTaken = async (id) => {
     if (!confirm('Mark this incident as resolved?')) return;
+    // Realtime will handle the state update automatically!
     const { error } = await supabase.from('reports').update({ status: 'Action Taken' }).eq('id', id);
     if (error) alert('Error updating status');
-    else {
-      const updated = reports.map(r => r.id === id ? { ...r, status: 'Action Taken' } : r);
-      setReports(updated);
-      detectHighAlerts(updated); // Re-calc alerts
-    }
   };
 
   const markIgnored = async (id) => {
     if (!confirm('Hide this report?')) return;
+    // Realtime will remove it from the UI automatically!
     const { error } = await supabase.from('reports').update({ status: 'Ignored' }).eq('id', id);
     if (error) alert('Error updating status');
-    else {
-      const updated = reports.filter(r => r.id !== id);
-      setReports(updated);
-      detectHighAlerts(updated); // Re-calc alerts
-    }
   };
 
   const handleLogout = async () => {
@@ -177,7 +213,7 @@ export default function AdminDashboard({ session, onBack }) {
             {highAlertSpots.map(cluster => (
               <div key={cluster.id} className="alert-card">
                 <span className="alert-count">{cluster.count} Reports </span>
-                
+                <span className="alert-type">{cluster.mainReport.disaster_type}</span>
                 <span className="alert-loc">
                   Near {cluster.mainReport.latitude.toFixed(3)},  {cluster.mainReport.longitude.toFixed(3)}
                 </span>
