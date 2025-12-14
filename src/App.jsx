@@ -14,7 +14,7 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
 
   // App States
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start true
   const [status, setStatus] = useState('Idle');
   const [pendingCount, setPendingCount] = useState(0);
   const [locationPermission, setLocationPermission] = useState('prompt');
@@ -26,22 +26,24 @@ export default function App() {
   // Helper to check if current user is admin
   const isAdmin = session?.user?.email === 'admin@gmail.com';
 
-  // 1. INITIALIZE & REALTIME SETUP
+  // --- 1. INITIAL SETUP (Run Once on Mount) ---
   useEffect(() => {
+    // A. Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      handleSessionRouting(session);
+      if (!session) setLoading(false); // Stop loading if not logged in
     });
 
+    // B. Listen for auth changes (Login/Logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      handleSessionRouting(session);
+      if (!session) setLoading(false);
     });
 
+    // C. Setup Offline Sync & Geolocation
     updatePendingCount();
     window.addEventListener('online', handleSync);
     
-    // Auto-location
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setLocationPermission('granted');
@@ -53,63 +55,65 @@ export default function App() {
       (error) => { if (error.code === 1) setLocationPermission('denied'); }
     );
 
-    // ⚡ REALTIME LISTENER FOR USER REPORTS
+    return () => {
+      window.removeEventListener('online', handleSync);
+      subscription.unsubscribe();
+    };
+  }, []); // Empty dependency array = Runs once only
+
+  // --- 2. DATA FETCHING & REALTIME (Run when Session Changes) ---
+  useEffect(() => {
+    if (!session) return;
+
+    // A. Handle Routing
+    if (session.user.email === 'admin@gmail.com') {
+      setView('admin');
+    } else {
+      setView('home');
+      // B. Fetch Data only if user is logged in
+      fetchReports(session.user.id); 
+    }
+
+    // C. Setup Realtime Subscription
     const channel = supabase
       .channel('realtime:user_reports')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, (payload) => {
-        handleRealtimeEvent(payload);
+        handleRealtimeEvent(payload, session.user.id);
       })
       .subscribe();
 
     return () => {
-      window.removeEventListener('online', handleSync);
-      subscription.unsubscribe();
-      supabase.removeChannel(channel); // Clean up
+      supabase.removeChannel(channel);
     };
-  }, [session]); // Add session as dependency to re-check user ID filtering
+  }, [session]); // Only run when session changes
 
-  // --- REALTIME HANDLER ---
-  const handleRealtimeEvent = (payload) => {
-    if (!session) return; // Only process if logged in
-    const userId = session.user.id;
-    const { eventType, new: newRecord, old: oldRecord } = payload;
+  // --- REALTIME EVENT HANDLER ---
+  const handleRealtimeEvent = (payload, userId) => {
+    const { eventType, new: newRecord } = payload;
 
     setMyReports((prevReports) => {
-      // Filter out only relevant records for THIS user
-      // Note: RLS on backend is best, but frontend filtering is good for UX here
-
-      // 1. UPDATE: If status changes (e.g. Admin marks 'Action Taken')
+      // 1. UPDATE: Status changed by Admin
       if (eventType === 'UPDATE') {
-        if (newRecord.user_id !== userId) return prevReports; // Not my report
+        if (newRecord.user_id !== userId) return prevReports; 
         return prevReports.map(r => r.id === newRecord.id ? { ...r, ...newRecord, isLocal: false } : r);
       }
 
-      // 2. INSERT: If user adds report from another device
+      // 2. INSERT: Report added from another device
       if (eventType === 'INSERT') {
         if (newRecord.user_id !== userId) return prevReports;
-        // Check if it's already in the list (local optimistic update might have added it)
-        if (prevReports.find(r => r.id === newRecord.id)) return prevReports;
-        return [ { ...newRecord, isLocal: false }, ...prevReports ];
+        if (prevReports.find(r => r.id === newRecord.id)) return prevReports; 
+        return [{ ...newRecord, isLocal: false }, ...prevReports];
       }
-
       return prevReports;
     });
   };
 
-  // --- ROUTING ---
-  const handleSessionRouting = (currentSession) => {
-    if (currentSession) {
-      fetchReports(currentSession.user.id);
-      if (currentSession.user.email === 'admin@gmail.com') {
-        setView('admin');
-      } else {
-        setView('home');
-      }
-    }
-  };
-
   // --- FETCH DATA ---
   const fetchReports = async (userId) => {
+    // Only show loading on initial fetch, not updates
+    if (myReports.length === 0) setLoading(true);
+    
+    // Local Data
     const localData = await db.pendingReports.toArray();
     const formattedLocal = localData.map(item => ({
       ...item,
@@ -118,6 +122,7 @@ export default function App() {
       isLocal: true
     }));
 
+    // Remote Data
     const { data: remoteData } = await supabase
       .from('reports')
       .select('*')
@@ -127,6 +132,8 @@ export default function App() {
     const combined = [...formattedLocal, ...(remoteData || [])];
     combined.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     setMyReports(combined);
+    
+    setLoading(false); // Stop loading
   };
 
   // --- SYNC & UPLOAD ---
@@ -198,8 +205,9 @@ export default function App() {
     e.preventDefault();
     if (!coords) return alert("Please enable location first.");
 
-    setLoading(true);
+    setLoading(true); 
     setStatus('Processing...');
+    
     const formData = new FormData(e.target);
     const imageFile = formData.get('image');
 
@@ -229,11 +237,12 @@ export default function App() {
       await db.pendingReports.add(payload);
       setStatus('Offline. Saved to Pending.');
     }
+    
     e.target.reset();
     updatePendingCount();
-    // fetchReports is called via Realtime or Sync, but calling it here ensures local view updates immediately
-    fetchReports(session.user.id);
-    setLoading(false);
+    // Re-fetch to update local list immediately
+    await fetchReports(session.user.id); 
+    setLoading(false); 
   };
 
   const handleLogout = async () => {
@@ -242,7 +251,14 @@ export default function App() {
   };
 
   // --- RENDER ---
-  if (!session) return <Auth />;
+  if (!session) {
+    // Show spinner while checking session, otherwise show Auth
+    return loading ? (
+      <div className="loading-overlay">
+         <div className="spinner"></div>
+      </div>
+    ) : <Auth />;
+  }
 
   if (view === 'admin' && isAdmin) {
     return <AdminDashboard session={session} onBack={() => setView('home')} />;
@@ -251,6 +267,14 @@ export default function App() {
   return (
     <div className="app-container">
       
+      {/* 🌀 LOADING SPINNER OVERLAY */}
+      {loading && (
+        <div className="loading-overlay">
+          <div className="spinner"></div>
+          <div className="loading-text">Loading...</div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="app-header">
         <h2>Disaster Reporter</h2>
@@ -335,7 +359,7 @@ export default function App() {
           </div>
 
           <button type="submit" disabled={loading} className="btn-submit">
-            {loading ? 'Sending Report...' : 'SUBMIT REPORT'}
+            {loading ? 'Sending...' : 'SUBMIT REPORT'}
           </button>
         </form>
       )}
